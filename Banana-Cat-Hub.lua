@@ -2148,12 +2148,22 @@ pcall(function()
 end)
 local A =
 	loadstring(game:HttpGet("https://raw.githubusercontent.com/obiiyeuem/vthangsitink/refs/heads/main/zzzz.lua"))()
--- ===== Notifications: EVERYTHING is shown as the Hub's own notification ("Banana Cat Hub") =====
+-- ===== Notifications: EVERYTHING is shown as the Hub's own native notification ("Banana Cat Hub : ...") =====
 -- Notifications that used another title (Secret Quest, Hidden Event, Auto Trade Bone, Kitsune, strings sent to
 -- Main.CreateNoti, the game's red top messages...) are converted: same title, same style, the old title goes
 -- at the start of the text. The same message is not repeated within 8 seconds.
 -- The library's automatic toggle toasts ("u haved ...") stay hidden; put  getgenv().BananaShowAllNoti = true
 -- before executing the script to see them too.
+-- The Hub's own notification: the game's native message "Banana Cat Hub : <text>" (red text, same one used by Hop Server)
+local __nativeNoti
+function BananaNativeNoti(text)
+	text = tostring(text):gsub("<[^>]+>", "")
+	local ok = pcall(function()
+		__nativeNoti = __nativeNoti or require(game:GetService("ReplicatedStorage"):WaitForChild("Notification", 5))
+		__nativeNoti.new("<Color=Red>Banana Cat Hub : " .. text .. "<Color=/>"):Display()
+	end)
+	return ok
+end
 pcall(function()
 	local orig = A.CreateNoti
 	if type(orig) ~= "function" or A.__BananaNotiWrapped then return end
@@ -2180,7 +2190,8 @@ pcall(function()
 		local now = os.clock()
 		if seen[c.Desc] and now - seen[c.Desc] < 8 then return end
 		seen[c.Desc] = now
-		return orig(c)
+		-- shows it as the Hub's native notification; if the game's module is not available, falls back to the toast
+		if not BananaNativeNoti(c.Desc) then return orig(c) end
 	end
 end)
 -- Helper for messages that used the game's own red notification: now shown as the Hub's notification
@@ -33681,7 +33692,13 @@ do
 	local CommF = game:GetService("ReplicatedStorage").Remotes.CommF_
 	local SEA_TRAVEL = { "TravelMain", "TravelDressrosa", "TravelZou" }
 
+	-- Mastery 600 messages use the Hub's native notification (top of the screen, they no longer cover the skill buttons).
+	-- To hide the progress messages:  getgenv().BananaMasteryNoti = false  before executing the script.
 	local function notify(text, time)
+		local t = tostring(text)
+		if getgenv().BananaMasteryNoti == false and not (t:find("reached 600", 1, true) or t:find("already have 600", 1, true)) then
+			return
+		end
 		pcall(function() A.CreateNoti({ Title = "Banana Cat Hub", Desc = text, ShowTime = time or 5 }) end)
 	end
 	local function currentSea()
@@ -33898,7 +33915,10 @@ do
 				seen[it.Name] = true
 				local tool = findTool(it.Name)
 				local mastery = math.max(tonumber(it.Mastery) or 0, toolMastery(tool))
-				if mastery < 600 then table.insert(missing, { name = it.Name, tool = tool, owned = true, mastery = mastery }) end
+				if mastery >= 600 then markSet("Mastery Done Sword", it.Name) end
+				if mastery < 600 and not markGet("Mastery Done Sword", it.Name) then
+					table.insert(missing, { name = it.Name, tool = tool, owned = true, mastery = mastery })
+				end
 			end
 		end
 		table.sort(missing, function(a, b2)
@@ -33928,7 +33948,10 @@ do
 				seen[it.Name] = true
 				local tool = findTool(it.Name)
 				local mastery = math.max(tonumber(it.Mastery) or 0, toolMastery(tool))
-				if mastery < 600 then table.insert(missing, { name = it.Name, tool = tool, owned = true, mastery = mastery }) end
+				if mastery >= 600 then markSet("Mastery Done Gun", it.Name) end
+				if mastery < 600 and not markGet("Mastery Done Gun", it.Name) then
+					table.insert(missing, { name = it.Name, tool = tool, owned = true, mastery = mastery })
+				end
 			end
 		end
 		table.sort(missing, function(a, b2)
@@ -34066,6 +34089,8 @@ end
 MasteryWeaponSection.CreateButton({ Title = "Reset Mastery 600 memory" }, function()
 	Settings["Mastery Done"] = {}
 	Settings["Mastery Owned"] = {}
+	Settings["Mastery Done Sword"] = {}
+	Settings["Mastery Done Gun"] = {}
 	SaveSettings()
 	pcall(function() A.CreateNoti({ Title = "Banana Cat Hub", Desc = "Mastery 600 memory cleared.", ShowTime = 4 }) end)
 end)
