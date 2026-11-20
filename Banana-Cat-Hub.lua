@@ -33657,21 +33657,123 @@ function DetectSwordUnlock()
 	return best
 end
 
--- ===== Auto Farm Mastery 600 (Melees + Swords from the inventory) =====
+-- ===== Auto Farm Mastery 600 (Melees + Swords + Guns from the inventory) =====
+-- Notifications: the old progress messages were removed. There is now ONE fixed notice on the screen that shows
+-- which fighting style / sword / gun is still missing 600 mastery (with the current mastery of each one) and what the
+-- script is going to do next (buy or equip). The notice only disappears when the item is bought or equipped.
 do
 	local lp = game.Players.LocalPlayer
 	local CommF = game:GetService("ReplicatedStorage").Remotes.CommF_
 	local SEA_TRAVEL = { "TravelMain", "TravelDressrosa", "TravelZou" }
 
-	-- Mastery 600 messages use the Hub's native notification (top of the screen, they no longer cover the skill buttons).
-	-- To hide the progress messages:  getgenv().BananaMasteryNoti = false  before executing the script.
-	local function notify(text, time)
-		local t = tostring(text)
-		if getgenv().BananaMasteryNoti == false and not (t:find("reached 600", 1, true) or t:find("already have 600", 1, true)) then
-			return
-		end
-		pcall(function() A.CreateNoti({ Title = "Banana Cat Hub", Desc = text, ShowTime = time or 5 }) end)
+	-- ---------- fixed notice (HUD) ----------
+	-- everything is kept inside the single table "hud" (the script is close to Lua's limit of 200 local variables)
+	local hud = { labels = { Melee = "Estilo de luta", Sword = "Espada", Gun = "Gun" }, ready = nil } -- ready: item already bought / equipped
+	function hud.parent()
+		local ok, p = pcall(function() return (gethui and gethui()) or game:GetService("CoreGui") end)
+		if ok and p then return p end
+		return lp:WaitForChild("PlayerGui")
 	end
+	function hud.ensure()
+		if hud.gui and hud.gui.Parent then return true end
+		local ok = pcall(function()
+			local parent = hud.parent()
+			local old = parent:FindFirstChild("BananaMasteryHud")
+			if old then old:Destroy() end
+			local gui = Instance.new("ScreenGui")
+			gui.Name = "BananaMasteryHud"
+			gui.ResetOnSpawn = false
+			gui.IgnoreGuiInset = true
+			gui.DisplayOrder = 50
+
+			local frame = Instance.new("Frame")
+			frame.AnchorPoint = Vector2.new(0.5, 0)
+			frame.Position = UDim2.new(0.5, 0, 0, 60)
+			frame.Size = UDim2.new(0, 300, 0, 0)
+			frame.AutomaticSize = Enum.AutomaticSize.Y
+			frame.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+			frame.BackgroundTransparency = 0.08
+			frame.BorderSizePixel = 0
+			frame.Parent = gui
+
+			local corner = Instance.new("UICorner")
+			corner.CornerRadius = UDim.new(0, 8)
+			corner.Parent = frame
+			local stroke = Instance.new("UIStroke")
+			stroke.Color = Color3.fromRGB(255, 205, 60)
+			stroke.Thickness = 1.5
+			stroke.Parent = frame
+			local pad = Instance.new("UIPadding")
+			pad.PaddingTop, pad.PaddingBottom = UDim.new(0, 8), UDim.new(0, 8)
+			pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 10), UDim.new(0, 10)
+			pad.Parent = frame
+			local list = Instance.new("UIListLayout")
+			list.Padding = UDim.new(0, 4)
+			list.SortOrder = Enum.SortOrder.LayoutOrder
+			list.Parent = frame
+
+			local function mk(order, size, color, bold)
+				local l = Instance.new("TextLabel")
+				l.LayoutOrder = order
+				l.BackgroundTransparency = 1
+				l.Size = UDim2.new(1, 0, 0, 0)
+				l.AutomaticSize = Enum.AutomaticSize.Y
+				l.TextXAlignment = Enum.TextXAlignment.Left
+				l.TextYAlignment = Enum.TextYAlignment.Top
+				l.TextWrapped = true
+				l.Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham
+				l.TextSize = size
+				l.TextColor3 = color
+				l.Text = ""
+				l.Parent = frame
+				return l
+			end
+			hud.title = mk(1, 15, Color3.fromRGB(255, 205, 60), true)
+			hud.body = mk(2, 13, Color3.fromRGB(235, 235, 235), false)
+			hud.action = mk(3, 14, Color3.fromRGB(120, 220, 140), true)
+			gui.Parent = parent
+			hud.gui = gui
+		end)
+		return ok and hud.gui ~= nil
+	end
+	function hud.hide()
+		hud.key = nil
+		if hud.gui then pcall(function() hud.gui.Enabled = false end) end
+	end
+	-- text = missing items, one per line ("Name (lv/600)"); action = "buy" | "equip" | "retry"
+	function hud.show(kind, text, pickName, action)
+		local key = table.concat({ tostring(kind), tostring(text), tostring(pickName), tostring(action) }, "|")
+		if hud.key == key and hud.gui and hud.gui.Enabled then return end
+		if not hud.ensure() then return end
+		hud.key = key
+		local lines = {}
+		for line in (tostring(text) .. "\n"):gmatch("(.-)\n") do
+			if line ~= "" then
+				local isPick = pickName and line:sub(1, #pickName) == pickName
+				table.insert(lines, (isPick and "▶ " or "• ") .. line)
+			end
+		end
+		local act
+		if action == "buy" then
+			act = "Vai comprar: " .. tostring(pickName)
+		elseif action == "equip" then
+			act = "Vai equipar: " .. tostring(pickName)
+		else
+			act = "Não deu certo agora, tentando de novo..."
+		end
+		pcall(function()
+			hud.title.Text = "Falta 600 de maestria — " .. (hud.labels[kind] or tostring(kind))
+			hud.body.Text = table.concat(lines, "\n")
+			hud.action.Text = act
+			hud.gui.Enabled = true
+		end)
+	end
+	-- the item was bought / equipped: the notice goes away
+	function hud.done(name)
+		hud.ready = name
+		hud.hide()
+	end
+
 	local function currentSea()
 		local id = game.PlaceId
 		if id == 2753915549 or id == 85211729168715 then return 1 end
@@ -33731,7 +33833,6 @@ do
 	end
 	local function travelSea(sea)
 		if not SEA_TRAVEL[sea] or sea == currentSea() then return end
-		notify("Traveling to Sea " .. sea .. "...", 4)
 		pcall(function() CommF:InvokeServer(SEA_TRAVEL[sea]) end)
 		task.wait(8)
 	end
@@ -33753,6 +33854,8 @@ do
 			getgenv().MasteryTarget = nil
 			getgenv().MasteryGunPhase = nil
 			getgenv().MasteryPause = false
+			hud.ready = nil
+			hud.hide()
 			SaveSettings("Farm Mastery", false)
 			SaveSettings("Start Farm", false)
 			pcall(function() TweenManager.CancelCurrent() end)
@@ -33769,7 +33872,6 @@ do
 		elseif loadTry[name] >= 3 then
 			loadTry[name] = 0
 			skip[name] = os.clock() + 120
-			notify("Could not load " .. name .. " from the inventory. Moving to the next one...", 6)
 		end
 	end
 
@@ -33789,16 +33891,16 @@ do
 				-- already has 600 mastery: never farmed, loaded or bought again
 			elseif tool or it or markGet("Mastery Owned", m.name) then
 				local lv = math.max(lvTool, lvInv)
-				table.insert(missing, { name = m.name, tool = tool, owned = true, entry = m })
+				table.insert(missing, { name = m.name, tool = tool, owned = true, entry = m, mastery = lv })
 				table.insert(sigParts, m.name .. "+")
 				table.insert(textParts, m.name .. " (" .. lv .. "/600)")
 			elseif m.npc then
 				table.insert(missing, { name = m.name, owned = false, entry = m })
 				table.insert(sigParts, m.name .. "-")
-				table.insert(textParts, m.name .. " (not owned)")
+				table.insert(textParts, m.name .. " (não possui)")
 			end
 		end
-		return missing, table.concat(sigParts, ","), table.concat(textParts, ", ")
+		return missing, table.concat(sigParts, ","), table.concat(textParts, "\n")
 	end
 	local npcWait, buyTry = {}, {}
 	local function acquireMelee(pick, skip, alive)
@@ -33835,8 +33937,8 @@ do
 			invTime = -100 -- refreshes the inventory to see the new style
 			if findTool(m.name) or invItemFuzzy(m.name) then
 				markSet("Mastery Owned", m.name)
-				notify("Bought " .. m.name .. "!", 4)
 				buyTry[m.name] = 0
+				hud.done(m.name) -- bought: the notice goes away
 			elseif buyTry[m.name] >= 3 then
 				buyTry[m.name] = 0
 				-- the purchase may have been refused because the style is ALREADY owned: tries to load it before skipping
@@ -33844,10 +33946,9 @@ do
 				task.wait(1)
 				if findTool(m.name) then
 					markSet("Mastery Owned", m.name)
-					notify(m.name .. " was already owned. Loaded it instead of buying.", 5)
+					hud.done(m.name)
 				else
 					skip[m.name] = os.clock() + 120
-					notify("Could not buy " .. m.name .. " (needs Beli or the base style mastery). Moving to the next one...", 6)
 				end
 			end
 			return
@@ -33871,7 +33972,6 @@ do
 			else
 				SaveSettings(triedKey, "")
 				skip[m.name] = os.clock() + 120
-				notify("NPC " .. m.npc .. " was not found in any sea. Skipping " .. m.name .. ".", 6)
 			end
 		end
 	end
@@ -33921,8 +34021,8 @@ do
 			table.insert(sigParts, m.name)
 			if i <= 8 then table.insert(textParts, m.name .. " (" .. m.mastery .. "/600)") end
 		end
-		local text = table.concat(textParts, ", ")
-		if #missing > 8 then text = text .. " +" .. (#missing - 8) .. " more" end
+		local text = table.concat(textParts, "\n")
+		if #missing > 8 then text = text .. "\n+" .. (#missing - 8) .. " outros" end
 		return missing, table.concat(sigParts, ","), text
 	end
 
@@ -33943,30 +34043,25 @@ do
 	end
 
 	-- ---------- shared controller ----------
-	local function run(kind, settingKey, scan, acquire, announceEquip)
+	local function run(kind, settingKey, scan, acquire)
 		getgenv().MasteryOwner = kind
-		local lastSig, current, skip, announced = "", nil, {}, nil
+		local current, skip = nil, {}
 		local function alive() return Settings[settingKey] and getgenv().MasteryOwner == kind end
 		while alive() and task.wait(0.5) do
 			pcall(function()
 				local missing, sig, text = scan()
 				if not missing or not alive() then return end
-				-- notification with the ones that are still missing (only when the list changes)
-				if sig ~= lastSig then
-					lastSig = sig
-					if #missing > 0 then notify("Missing 600 mastery: " .. text, 8) end
-				end
 				if current then
 					local still = false
 					for _, m in ipairs(missing) do if m.name == current then still = true break end end
 					if not still then
-						notify(current .. " reached 600 mastery! Checking the others...", 5)
-						current, announced = nil, nil
+						-- reached 600: checks the others
+						current = nil
+						hud.ready = nil
 						getgenv().MasteryTarget = nil
 					end
 				end
 				if #missing == 0 then
-					notify("All " .. kind .. " already have 600 mastery!", 6)
 					releaseEngine(kind)
 					return
 				end
@@ -33976,13 +34071,16 @@ do
 				end
 				if not pick then
 					getgenv().MasteryPause = true -- everything left was skipped for now
+					hud.show(kind, text, nil, "retry")
 					return
 				end
 				if not pick.tool then
 					-- not loaded yet: buys it (Melee, going to the NPC) or loads it from the inventory
 					getgenv().MasteryPause = true
 					getgenv().MasteryTarget = nil
-					current, announced = nil, nil
+					current = nil
+					if hud.ready == pick.name then hud.ready = nil end
+					hud.show(kind, text, pick.name, pick.owned and "equip" or "buy")
 					acquire(pick, skip, alive)
 					return
 				end
@@ -33995,18 +34093,19 @@ do
 				if not Settings["Start Farm"] then SaveSettings("Start Farm", true) end
 				if currentSea() ~= 3 then
 					getgenv().MasteryPause = true
-					notify("Going to Sea 3 (Haunted Castle) to farm " .. pick.name, 5)
+					if hud.ready ~= pick.name then hud.show(kind, text, pick.name, "equip") end
 					travelSea(3)
 					return
 				end
 				getgenv().MasteryPause = false
 				holdTarget(pick.name)
-				if announceEquip and announced ~= pick.name then
-					local held = lp.Character and lp.Character:FindFirstChildOfClass("Tool")
-					if held and held.Name == pick.name then
-						announced = pick.name
-						notify("Equipped " .. pick.name .. " to farm mastery (" .. (pick.mastery or 0) .. "/600)", 5)
-					end
+				-- the notice goes away when the item is equipped (the Gun farm switches to the Melee on purpose, that counts too)
+				local held = lp.Character and lp.Character:FindFirstChildOfClass("Tool")
+				local gunMeleePhase = kind == "Gun" and getgenv().MasteryGunPhase == "Melee"
+				if hud.ready == pick.name or gunMeleePhase or (held and held.Name == pick.name) then
+					hud.done(pick.name)
+				else
+					hud.show(kind, text, pick.name, "equip")
 				end
 			end)
 		end
@@ -34022,7 +34121,7 @@ do
 				SaveSettings("Select Method Farm Mastery", "Melee")
 				SaveSettings("Farm Mastery", true)
 				SaveSettings("Start Farm", true)
-				spawn(function() run("Melee", "Auto Farm Mastery 600 Melees", scanMelee, acquireMelee, false) end)
+				spawn(function() run("Melee", "Auto Farm Mastery 600 Melees", scanMelee, acquireMelee) end)
 			else
 				releaseEngine("Melee")
 			end
@@ -34036,7 +34135,7 @@ do
 				SaveSettings("Select Method Farm Mastery", "Sword")
 				SaveSettings("Farm Mastery", true)
 				SaveSettings("Start Farm", true)
-				spawn(function() run("Sword", "Auto Farm Mastery 600 Sword In Inventory", scanSword, acquireSword, true) end)
+				spawn(function() run("Sword", "Auto Farm Mastery 600 Sword In Inventory", scanSword, acquireSword) end)
 			else
 				releaseEngine("Sword")
 			end
@@ -34050,7 +34149,7 @@ do
 				SaveSettings("Select Method Farm Mastery", "Gun")
 				SaveSettings("Farm Mastery", true)
 				SaveSettings("Start Farm", true)
-				spawn(function() run("Gun", "Auto Farm Mastery 600 Gun In Inventory", scanGun, acquireGun, true) end)
+				spawn(function() run("Gun", "Auto Farm Mastery 600 Gun In Inventory", scanGun, acquireGun) end)
 			else
 				releaseEngine("Gun")
 			end
@@ -34063,7 +34162,6 @@ MasteryWeaponSection.CreateButton({ Title = "Reset Mastery 600 memory" }, functi
 	Settings["Mastery Done Sword"] = {}
 	Settings["Mastery Done Gun"] = {}
 	SaveSettings()
-	pcall(function() A.CreateNoti({ Title = "Banana Cat Hub", Desc = "Mastery 600 memory cleared.", ShowTime = 4 }) end)
 end)
 UpgradeWeaponSection = GetItemsMain.CreateSection("Upgrade Weapon")
 getgenv().StatusUpgradeWP = UpgradeWeaponSection.CreateLabel({ Title = "" })
