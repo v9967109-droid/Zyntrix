@@ -2164,36 +2164,7 @@ function BananaNativeNoti(text)
 	end)
 	return ok
 end
-pcall(function()
-	local orig = A.CreateNoti
-	if type(orig) ~= "function" or A.__BananaNotiWrapped then return end
-	A.__BananaNotiWrapped = true
-	local seen = {}
-	local HUB = "Banana Cat Hub"
-	local function convert(cfg, dur)
-		if type(cfg) ~= "table" then cfg = { Desc = tostring(cfg), ShowTime = dur } end
-		local title = tostring(cfg.Title or "")
-		local desc = tostring(cfg.Desc or cfg.Description or cfg.Content or "")
-		if title:sub(1, #HUB) == HUB then
-			local sub = title:sub(#HUB + 1):gsub("^%s*[%-:|]%s*", "")
-			if sub ~= "" then desc = sub .. ": " .. desc end
-		elseif title ~= "" then
-			desc = title .. ": " .. desc
-		end
-		return { Title = HUB, Desc = desc, ShowTime = tonumber(cfg.ShowTime or cfg.Duration or dur) or 5 }
-	end
-	A.CreateNoti = function(cfg, dur, ...)
-		if cfg == nil then return end
-		local c = convert(cfg, dur)
-		if c.Desc == "" then return end
-		if not getgenv().BananaShowAllNoti and c.Desc:sub(1, 7) == "u haved" then return end
-		local now = os.clock()
-		if seen[c.Desc] and now - seen[c.Desc] < 8 then return end
-		seen[c.Desc] = now
-		-- shows it as the Hub's native notification; if the game's module is not available, falls back to the toast
-		if not BananaNativeNoti(c.Desc) then return orig(c) end
-	end
-end)
+-- [FIX] wrapper removido: A.CreateNoti volta a usar as notificações originais do Hub (biblioteca)
 -- Helper for messages that used the game's own red notification: now shown as the Hub's notification
 function BananaHubNoti(text, dur)
 	text = tostring(text):gsub("<[^>]+>", ""):gsub("^%s*Banana Cat Hub%s*:%s*", "")
@@ -41345,7 +41316,7 @@ task.spawn(function()
 			end
 			if hopThread then return end
 			pcall(function()
-				require(RS.Notification).new("<Color=Red>Banana Cat Hub : Tyrant missing " .. missing .. " eye(s), switching server<Color=/>"):Display()
+				A.CreateNoti({ Title = "Banana Cat Hub", Desc = "Tyrant missing " .. missing .. " eye(s), switching server", ShowTime = 5 })
 			end)
 			hopThread = task.spawn(function()
 				pcall(HopServer)
