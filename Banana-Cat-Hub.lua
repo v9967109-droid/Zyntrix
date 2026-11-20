@@ -33905,18 +33905,38 @@ do
 		end
 	end
 
-	-- ---------- Sword (inventory) ----------
-	local function scanSword()
+	-- FIX (Sword / Gun): same memory logic as the Melees. Every sword/gun that reached 600 is remembered (also the ones
+	-- read straight from the Backpack/Character), names are compared ignoring spaces/case, and a 600 weapon is
+	-- never loaded or equipped again (not even after rejoining, the memory is saved in the settings file).
+	local function isDone(key, name)
+		if markGet(key, name) then return true end
+		local tb = Settings[key]
+		if type(tb) == "table" then
+			local n = norm(name)
+			for k, v in pairs(tb) do
+				if v == true and norm(k) == n then return true end
+			end
+		end
+		return false
+	end
+	local function scanWeapon(tip, key)
 		local inv = getInventory()
 		if not inv then return nil end -- inventory not read yet: do not assume "all 600"
+		for _, box in ipairs({ lp.Character, lp.Backpack }) do
+			if box then
+				for _, f in ipairs(box:GetChildren()) do
+					if f:IsA("Tool") and f.ToolTip == tip and toolMastery(f) >= 600 then markSet(key, f.Name) end
+				end
+			end
+		end
 		local seen, missing = {}, {}
 		for _, it in pairs(inv) do
-			if type(it) == "table" and it.Type == "Sword" and it.Name and not seen[it.Name] then
+			if type(it) == "table" and it.Type == tip and it.Name and not seen[it.Name] then
 				seen[it.Name] = true
 				local tool = findTool(it.Name)
 				local mastery = math.max(tonumber(it.Mastery) or 0, toolMastery(tool))
-				if mastery >= 600 then markSet("Mastery Done Sword", it.Name) end
-				if mastery < 600 and not markGet("Mastery Done Sword", it.Name) then
+				if mastery >= 600 then markSet(key, it.Name) end
+				if mastery < 600 and not isDone(key, it.Name) then
 					table.insert(missing, { name = it.Name, tool = tool, owned = true, mastery = mastery })
 				end
 			end
@@ -33933,6 +33953,11 @@ do
 		local text = table.concat(textParts, ", ")
 		if #missing > 8 then text = text .. " +" .. (#missing - 8) .. " more" end
 		return missing, table.concat(sigParts, ","), text
+	end
+
+	-- ---------- Sword (inventory) ----------
+	local function scanSword()
+		return scanWeapon("Sword", "Mastery Done Sword")
 	end
 	local function acquireSword(pick, skip)
 		loadItem(pick.name, skip)
@@ -33940,32 +33965,7 @@ do
 
 	-- ---------- Gun (inventory) ----------
 	local function scanGun()
-		local inv = getInventory()
-		if not inv then return nil end -- inventory not read yet: do not assume "all 600"
-		local seen, missing = {}, {}
-		for _, it in pairs(inv) do
-			if type(it) == "table" and it.Type == "Gun" and it.Name and not seen[it.Name] then
-				seen[it.Name] = true
-				local tool = findTool(it.Name)
-				local mastery = math.max(tonumber(it.Mastery) or 0, toolMastery(tool))
-				if mastery >= 600 then markSet("Mastery Done Gun", it.Name) end
-				if mastery < 600 and not markGet("Mastery Done Gun", it.Name) then
-					table.insert(missing, { name = it.Name, tool = tool, owned = true, mastery = mastery })
-				end
-			end
-		end
-		table.sort(missing, function(a, b2)
-			if a.mastery ~= b2.mastery then return a.mastery > b2.mastery end
-			return a.name < b2.name
-		end)
-		local sigParts, textParts = {}, {}
-		for i, m in ipairs(missing) do
-			table.insert(sigParts, m.name)
-			if i <= 8 then table.insert(textParts, m.name .. " (" .. m.mastery .. "/600)") end
-		end
-		local text = table.concat(textParts, ", ")
-		if #missing > 8 then text = text .. " +" .. (#missing - 8) .. " more" end
-		return missing, table.concat(sigParts, ","), text
+		return scanWeapon("Gun", "Mastery Done Gun")
 	end
 	local function acquireGun(pick, skip)
 		loadItem(pick.name, skip)
