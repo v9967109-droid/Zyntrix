@@ -33666,86 +33666,19 @@ do
 	local CommF = game:GetService("ReplicatedStorage").Remotes.CommF_
 	local SEA_TRAVEL = { "TravelMain", "TravelDressrosa", "TravelZou" }
 
-	-- ---------- fixed notice (HUD) ----------
+	-- ---------- Mastery 600 notifications: now use the Hub's own notification (A.CreateNoti, same as the rest of Banana) ----------
 	-- everything is kept inside the single table "hud" (the script is close to Lua's limit of 200 local variables)
 	local hud = { labels = { Melee = "Estilo de luta", Sword = "Espada", Gun = "Gun" }, ready = nil } -- ready: item already bought / equipped
-	function hud.parent()
-		local ok, p = pcall(function() return (gethui and gethui()) or game:GetService("CoreGui") end)
-		if ok and p then return p end
-		return lp:WaitForChild("PlayerGui")
-	end
-	function hud.ensure()
-		if hud.gui and hud.gui.Parent then return true end
-		local ok = pcall(function()
-			local parent = hud.parent()
-			local old = parent:FindFirstChild("BananaMasteryHud")
-			if old then old:Destroy() end
-			local gui = Instance.new("ScreenGui")
-			gui.Name = "BananaMasteryHud"
-			gui.ResetOnSpawn = false
-			gui.IgnoreGuiInset = true
-			gui.DisplayOrder = 50
-
-			local frame = Instance.new("Frame")
-			frame.AnchorPoint = Vector2.new(0.5, 0)
-			frame.Position = UDim2.new(0.5, 0, 0, 60)
-			frame.Size = UDim2.new(0, 300, 0, 0)
-			frame.AutomaticSize = Enum.AutomaticSize.Y
-			frame.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
-			frame.BackgroundTransparency = 0.08
-			frame.BorderSizePixel = 0
-			frame.Parent = gui
-
-			local corner = Instance.new("UICorner")
-			corner.CornerRadius = UDim.new(0, 8)
-			corner.Parent = frame
-			local stroke = Instance.new("UIStroke")
-			stroke.Color = Color3.fromRGB(255, 205, 60)
-			stroke.Thickness = 1.5
-			stroke.Parent = frame
-			local pad = Instance.new("UIPadding")
-			pad.PaddingTop, pad.PaddingBottom = UDim.new(0, 8), UDim.new(0, 8)
-			pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 10), UDim.new(0, 10)
-			pad.Parent = frame
-			local list = Instance.new("UIListLayout")
-			list.Padding = UDim.new(0, 4)
-			list.SortOrder = Enum.SortOrder.LayoutOrder
-			list.Parent = frame
-
-			local function mk(order, size, color, bold)
-				local l = Instance.new("TextLabel")
-				l.LayoutOrder = order
-				l.BackgroundTransparency = 1
-				l.Size = UDim2.new(1, 0, 0, 0)
-				l.AutomaticSize = Enum.AutomaticSize.Y
-				l.TextXAlignment = Enum.TextXAlignment.Left
-				l.TextYAlignment = Enum.TextYAlignment.Top
-				l.TextWrapped = true
-				l.Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham
-				l.TextSize = size
-				l.TextColor3 = color
-				l.Text = ""
-				l.Parent = frame
-				return l
-			end
-			hud.title = mk(1, 15, Color3.fromRGB(255, 205, 60), true)
-			hud.body = mk(2, 13, Color3.fromRGB(235, 235, 235), false)
-			hud.action = mk(3, 14, Color3.fromRGB(120, 220, 140), true)
-			gui.Parent = parent
-			hud.gui = gui
-		end)
-		return ok and hud.gui ~= nil
-	end
 	function hud.hide()
 		hud.key = nil
-		if hud.gui then pcall(function() hud.gui.Enabled = false end) end
 	end
 	-- text = missing items, one per line ("Name (lv/600)"); action = "buy" | "equip" | "retry"
 	function hud.show(kind, text, pickName, action)
 		local key = table.concat({ tostring(kind), tostring(text), tostring(pickName), tostring(action) }, "|")
-		if hud.key == key and hud.gui and hud.gui.Enabled then return end
-		if not hud.ensure() then return end
+		-- same message is only repeated every 30s (this function is called every 0.5s by the controller)
+		if hud.key == key and os.clock() - (hud.last or 0) < 30 then return end
 		hud.key = key
+		hud.last = os.clock()
 		local lines = {}
 		for line in (tostring(text) .. "\n"):gmatch("(.-)\n") do
 			if line ~= "" then
@@ -33762,13 +33695,14 @@ do
 			act = "Não deu certo agora, tentando de novo..."
 		end
 		pcall(function()
-			hud.title.Text = "Falta 600 de maestria — " .. (hud.labels[kind] or tostring(kind))
-			hud.body.Text = table.concat(lines, "\n")
-			hud.action.Text = act
-			hud.gui.Enabled = true
+			A.CreateNoti({
+				Title = "Banana Cat Hub",
+				Desc = "Falta 600 de maestria — " .. (hud.labels[kind] or tostring(kind)) .. "\n" .. table.concat(lines, "\n") .. "\n" .. act,
+				ShowTime = 8,
+			})
 		end)
 	end
-	-- the item was bought / equipped: the notice goes away
+	-- the item was bought / equipped
 	function hud.done(name)
 		hud.ready = name
 		hud.hide()
