@@ -10751,6 +10751,14 @@ local function HauntedCastleMasteryFarm()
 	}
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then return end
+	-- Auto Accept Quest (Mastery 600): same Bones quest logic used by Auto Farm Bones
+	if Settings["Auto Accept Quest Mastery 600"] then
+		local bq = AFQ.Quest["Farm Bones"]
+		if t.Data.Level.Value >= bq[1] and not AFQ.HasQuest() then
+			QuestBoneAndkatakuri(bq[2], bq[3])
+			return
+		end
+	end
 	local mob = DetectMob(masteryMobs)
 	if mob and mob:FindFirstChild("HumanoidRootPart") then
 		sizepart(mob)
@@ -28901,6 +28909,35 @@ BoatSettingSection.CreateToggle(
 		SaveSettings("Change Speed Boat", b)
 	end
 )
+BoatSettingSection.CreateButton({ Title = "Bring Boat" }, function()
+	pcall(function()
+		local char = t.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if not root or not hum or hum.Health <= 0 then return end
+		local boat = checkboat()
+		if not boat then return end
+		local seat = boat:FindFirstChild("VehicleSeat") or boat:FindFirstChild("VehicleSeat", true)
+		if not seat then return end
+		if (seat.Position - root.Position).Magnitude <= 300 then
+			-- up to 300 studs: teleports the player to the driver seat
+			root.CFrame = seat.CFrame * CFrame.new(0, 2, 0)
+			task.wait(0.1)
+			seat:Sit(hum)
+		else
+			-- more than 300 studs: brings the boat instantly to the player
+			boat:PivotTo(root.CFrame * CFrame.new(0, 3, -25))
+			for _, part in ipairs(boat:GetDescendants()) do
+				if part:IsA("BasePart") then
+					pcall(function()
+						part.AssemblyLinearVelocity = Vector3.zero
+						part.AssemblyAngularVelocity = Vector3.zero
+					end)
+				end
+			end
+		end
+	end)
+end)
 RaceMain = Main.CreatePage({ Page_Name = "Upgrade Race", Page_Title = "Upgrade Race" })
 RaceDracoMain = Main.CreatePage({ Page_Name = "Race Draco", Page_Title = "Race Draco" })
 RaceDracoSection = RaceDracoMain.CreateSection("Race Draco")
@@ -34089,14 +34126,13 @@ do
 			end
 		end
 	)
+	MasteryWeaponSection.CreateToggle(
+		{ Title = "Auto Accept Quest", Desc = "Accepts the Bones quest (Haunted Castle) while farming Mastery 600 (Melees / Sword / Gun).", Default = Settings["Auto Accept Quest Mastery 600"] or false },
+		function(g)
+			SaveSettings("Auto Accept Quest Mastery 600", g)
+		end
+	)
 end
-MasteryWeaponSection.CreateButton({ Title = "Reset Mastery 600 memory" }, function()
-	Settings["Mastery Done"] = {}
-	Settings["Mastery Owned"] = {}
-	Settings["Mastery Done Sword"] = {}
-	Settings["Mastery Done Gun"] = {}
-	SaveSettings()
-end)
 UpgradeWeaponSection = GetItemsMain.CreateSection("Upgrade Weapon")
 getgenv().StatusUpgradeWP = UpgradeWeaponSection.CreateLabel({ Title = "" })
 function DetectGunUnlock()
