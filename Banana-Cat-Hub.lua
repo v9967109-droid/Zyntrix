@@ -7632,8 +7632,126 @@ function IsBossTarget(E)
 	end)
 	return ok and r or false
 end
+-- Double Damage + Use M1 + Skills Farm (reads the Setting Farm toggles during Start Farm)
+do
+	local VIM = game:GetService("VirtualInputManager")
+	local SKILL_KEYS = { "Z", "X", "C", "V", "F" }
+	local function skillReady(fr)
+		local ok, r = pcall(function()
+			return fr:IsA("Frame")
+				and fr.Name ~= "Template"
+				and (
+					(fr.Title.TextColor3 == Color3.new(1, 1, 1) and fr.Cooldown.Size == UDim2.new(0, 0, 1, -1))
+					or fr.Cooldown.Size == UDim2.new(1, 0, 1, -1)
+				)
+		end)
+		return ok and r
+	end
+	local function pickSkill(tool)
+		local sel = Settings["Select Skills M1 Farm"]
+		local main = t.PlayerGui:FindFirstChild("Main")
+		local skills = main and main:FindFirstChild("Skills")
+		local gui = skills and skills:FindFirstChild(tool.Name)
+		if not gui or type(sel) ~= "table" then
+			return nil
+		end
+		for _, key in ipairs(SKILL_KEYS) do
+			local fr = gui:FindFirstChild(key)
+			if fr and sel[key] and skillReady(fr) then
+				return key
+			end
+		end
+		return nil
+	end
+	local function useSkill(tool, mob)
+		if getgenv().__FarmSkillBusy then
+			return
+		end
+		local key = pickSkill(tool)
+		if not key then
+			return
+		end
+		getgenv().__FarmSkillBusy = true
+		task.spawn(function()
+			pcall(function()
+				local hrp = mob and mob:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					getgenv().AimPos = hrp.CFrame
+				end
+				VIM:SendKeyEvent(true, key, false, game)
+				if Settings["Use skill fast dont hold"] then
+					task.wait(0.05)
+				else
+					task.wait(HoldDelay(key, tool.Name))
+				end
+			end)
+			pcall(function()
+				VIM:SendKeyEvent(false, key, false, game)
+			end)
+			task.wait(0.1)
+			getgenv().__FarmSkillBusy = false
+		end)
+	end
+	-- returns true when this tick's attack was handled here (Double Damage / M1 + Skills)
+	getgenv().FarmExtras = function(E, wide)
+		local dd, sk = Settings["Double Damage"], Settings["Use M1 + Skills Farm"]
+		if not Settings["Start Farm"] or not (dd or sk) then
+			getgenv().__FarmPhaseTool = nil
+			return false
+		end
+		local char = t.Character
+		local fruit = NameWeapon("Blox Fruit")
+		if not char or not fruit then
+			getgenv().__FarmPhaseTool = nil
+			return false
+		end
+		-- Double Damage pairs the selected weapon with the fruit (if the selected one IS the fruit, pairs it with Melee)
+		local other, otherKind
+		if dd then
+			local sel = Settings["Select Weapon"] or "Melee"
+			otherKind = sel == "Blox Fruit" and "Melee" or sel
+			other = NameWeapon(otherKind)
+		end
+		local now = tick()
+		local phase = getgenv().__FarmPhase or "fruit"
+		if not other then
+			phase = "fruit"
+		elseif now - (getgenv().__FarmPhaseAt or 0) >= (phase == "fruit" and 0.6 or 0.4) then
+			phase = phase == "fruit" and "weapon" or "fruit"
+			getgenv().__FarmPhaseAt = now
+		end
+		getgenv().__FarmPhase = phase
+		if phase == "fruit" then
+			getgenv().__FarmPhaseTool = fruit
+			equiptool(fruit)
+			local tool = char:FindFirstChild(fruit)
+			if tool then
+				if FruitHasM1(fruit) then
+					pcall(getgenv().UseFruitM1, E)
+				end
+				if sk then
+					useSkill(tool, E)
+				end
+			end
+		else
+			getgenv().__FarmPhaseTool = other
+			equiptool(other)
+			if char:FindFirstChild(other) then
+				if otherKind == "Gun" and ShootM1 then
+					pcall(ShootM1, E)
+				else
+					pcall(AttackFunction, wide and 80 or 30)
+				end
+			end
+		end
+		return true
+	end
+end
 getgenv().ClickM1 = function(E, l)
 	if not m(E) then
+		return
+	end
+	if getgenv().FarmExtras and getgenv().FarmExtras(E, l) then
 		return
 	end
 	-- Fruit M1 on Bosses (independent of the selected weapon)
@@ -9383,6 +9501,10 @@ function UsedualFlock()
 			equiptool(fruit)
 			return
 		end
+	end
+	if getgenv().__FarmPhaseTool and Settings["Start Farm"] and (Settings["Double Damage"] or Settings["Use M1 + Skills Farm"]) then
+		equiptool(getgenv().__FarmPhaseTool)
+		return
 	end
 	equiptool(NameWeapon(Settings["Select Weapon"] or "Melee"))
 end
