@@ -20018,4 +20018,4 @@ local function run(URL)
     end
 end
 
-run("https://raw.githubusercontent.com/v9967109-droid/Zyntrix/refs/heads/main/Banana-Loader.lua")
+run("https://raw.githubusercontent.com/v9967109-droid/Zyntrix/refs/heads/main/Banana-Cat-Hub.lua")
