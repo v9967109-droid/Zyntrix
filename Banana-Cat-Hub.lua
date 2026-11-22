@@ -33705,12 +33705,12 @@ do
 
 	-- ---------- Mastery 600 notifications: now use the Hub's own notification (A.CreateNoti, same as the rest of Banana) ----------
 	-- everything is kept inside the single table "hud" (the script is close to Lua's limit of 200 local variables)
-	local hud = { labels = { Melee = "Estilo de luta", Sword = "Espada", Gun = "Gun" }, ready = nil } -- ready: item already bought / equipped
+	local hud = { labels = { Melee = "Fighting Style", Sword = "Sword", Gun = "Gun" }, ready = nil } -- ready: item already bought / equipped
 	function hud.hide()
 		hud.key = nil
 	end
 	-- text = missing items, one per line ("Name (lv/600)"); action = "buy" | "equip" | "retry"
-	function hud.show(kind, text, pickName, action)
+	function hud.show(kind, text, pickName, action, total)
 		local key = table.concat({ tostring(kind), tostring(text), tostring(pickName), tostring(action) }, "|")
 		-- same message is only repeated every 30s (this function is called every 0.5s by the controller)
 		if hud.key == key and os.clock() - (hud.last or 0) < 30 then return end
@@ -33725,16 +33725,45 @@ do
 		end
 		local act
 		if action == "buy" then
-			act = "Vai comprar: " .. tostring(pickName)
+			act = "Going to buy: " .. tostring(pickName)
 		elseif action == "equip" then
-			act = "Vai equipar: " .. tostring(pickName)
+			act = "Going to equip: " .. tostring(pickName)
 		else
-			act = "Não deu certo agora, tentando de novo..."
+			act = "Did not work right now, trying again..."
 		end
 		pcall(function()
 			A.CreateNoti({
 				Title = "Banana Cat Hub",
-				Desc = "Falta 600 de maestria — " .. (hud.labels[kind] or tostring(kind)) .. "\n" .. table.concat(lines, "\n") .. "\n" .. act,
+				Desc = "Missing 600 mastery — " .. (hud.labels[kind] or tostring(kind)) .. "\n" .. table.concat(lines, "\n") .. (total and ("\nTotal mastery left: " .. total) or "") .. "\n" .. act,
+				ShowTime = 8,
+			})
+		end)
+	end
+	-- total mastery still missing (to 600) across every item in the list
+	function hud.total(missing, pick, liveLv)
+		local sum = 0
+		for _, m in ipairs(missing) do
+			local lv = m.mastery or 0
+			if pick and m.name == pick.name and liveLv then lv = math.max(lv, liveLv) end
+			sum = sum + math.max(0, 600 - lv)
+		end
+		return sum
+	end
+	-- equipped / farming notice: which item is in use, its mastery left and the total left
+	function hud.status(kind, pick, missing)
+		local live = hud.toolMastery(pick.tool or hud.findTool(pick.name))
+		local lv = math.max(pick.mastery or 0, live)
+		local key = tostring(kind) .. "|" .. tostring(pick.name)
+		if hud.statusKey == key and os.clock() - (hud.statusLast or 0) < 30 then return end
+		hud.statusKey = key
+		hud.statusLast = os.clock()
+		local total = hud.total(missing, pick, lv)
+		pcall(function()
+			A.CreateNoti({
+				Title = "Banana Cat Hub",
+				Desc = "Equipped " .. (hud.labels[kind] or tostring(kind)) .. ": " .. tostring(pick.name)
+					.. "\nMastery: " .. lv .. "/600 — " .. math.max(0, 600 - lv) .. " left to level up"
+					.. "\nTotal mastery left: " .. total,
 				ShowTime = 8,
 			})
 		end)
@@ -33758,6 +33787,7 @@ do
 		local lv = tool and tool:FindFirstChild("Level")
 		return lv and tonumber(lv.Value) or 0
 	end
+	hud.toolMastery, hud.findTool = toolMastery, findTool
 	-- inventory (same list the script uses for fruits/swords). Fighting styles you own but that are not equipped
 	-- are NOT in the Backpack, so ownership is also checked here.
 	local invCache, invTime = nil, -100
@@ -33868,7 +33898,7 @@ do
 			elseif m.npc then
 				table.insert(missing, { name = m.name, owned = false, entry = m })
 				table.insert(sigParts, m.name .. "-")
-				table.insert(textParts, m.name .. " (não possui)")
+				table.insert(textParts, m.name .. " (not owned)")
 			end
 		end
 		return missing, table.concat(sigParts, ","), table.concat(textParts, "\n")
@@ -33993,7 +34023,7 @@ do
 			if i <= 8 then table.insert(textParts, m.name .. " (" .. m.mastery .. "/600)") end
 		end
 		local text = table.concat(textParts, "\n")
-		if #missing > 8 then text = text .. "\n+" .. (#missing - 8) .. " outros" end
+		if #missing > 8 then text = text .. "\n+" .. (#missing - 8) .. " more" end
 		return missing, table.concat(sigParts, ","), text
 	end
 
@@ -34036,13 +34066,14 @@ do
 					releaseEngine(kind)
 					return
 				end
+				local total = hud.total(missing)
 				local pick
 				for _, m in ipairs(missing) do
 					if (skip[m.name] or 0) < os.clock() then pick = m break end
 				end
 				if not pick then
 					getgenv().MasteryPause = true -- everything left was skipped for now
-					hud.show(kind, text, nil, "retry")
+					hud.show(kind, text, nil, "retry", total)
 					return
 				end
 				if not pick.tool then
@@ -34051,7 +34082,7 @@ do
 					getgenv().MasteryTarget = nil
 					current = nil
 					if hud.ready == pick.name then hud.ready = nil end
-					hud.show(kind, text, pick.name, pick.owned and "equip" or "buy")
+					hud.show(kind, text, pick.name, pick.owned and "equip" or "buy", total)
 					acquire(pick, skip, alive)
 					return
 				end
@@ -34064,7 +34095,7 @@ do
 				if not Settings["Start Farm"] then SaveSettings("Start Farm", true) end
 				if currentSea() ~= 3 then
 					getgenv().MasteryPause = true
-					if hud.ready ~= pick.name then hud.show(kind, text, pick.name, "equip") end
+					if hud.ready ~= pick.name then hud.show(kind, text, pick.name, "equip", total) end
 					travelSea(3)
 					return
 				end
@@ -34075,8 +34106,9 @@ do
 				local gunMeleePhase = kind == "Gun" and getgenv().MasteryGunPhase == "Melee"
 				if hud.ready == pick.name or gunMeleePhase or (held and held.Name == pick.name) then
 					hud.done(pick.name)
+					hud.status(kind, pick, missing)
 				else
-					hud.show(kind, text, pick.name, "equip")
+					hud.show(kind, text, pick.name, "equip", total)
 				end
 			end)
 		end
